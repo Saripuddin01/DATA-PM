@@ -15,6 +15,7 @@
     --danger:#e53935;
   }
   *{box-sizing:border-box;}
+  html{ height:100%; }
   body{
     font-family: 'Segoe UI', Arial, sans-serif;
     background: var(--bg);
@@ -187,9 +188,14 @@
   body.view-mode .toolbar button:not(#modeBtn){
     display:none !important;
   }
+  body.view-mode p[style*="tersimpan"]{
+    display:none !important;
+  }
   body.view-mode{
-    padding: 10px 6px 30px;
-    min-height: 100vh;
+    padding: 8px 6px;
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -206,24 +212,26 @@
   }
   body.view-mode .table-wrap{
     max-width: min(96vw, 1400px);
+    max-height: 96vh;
     width: 100%;
     margin: 0 auto;
-    overflow-x: hidden;
+    overflow: hidden;
     box-shadow: 0 4px 20px rgba(0,0,0,0.15);
   }
   body.view-mode table{
     min-width: 0;
     width: 100%;
+    height: 100%;
     table-layout: fixed;
-    font-size: clamp(0.6rem, 2.6vw, 2.4rem);
+    font-size: clamp(0.5rem, min(2.2vw, 2.6vh), 1.6rem);
   }
   body.view-mode th,
   body.view-mode td{
     white-space: normal;
     word-break: break-word;
     overflow-wrap: break-word;
-    padding: clamp(4px, 1vw, 22px) clamp(3px, 0.8vw, 18px);
-    line-height: 1.25;
+    padding: clamp(1px, min(0.7vw, 1vh), 12px) clamp(2px, 0.7vw, 14px);
+    line-height: 1.15;
   }
   body.view-mode td:first-child,
   body.view-mode th:first-child{
@@ -242,7 +250,7 @@
   }
   body.view-mode .grand-total td{
     font-size: inherit;
-    padding: clamp(4px, 1vw, 22px) clamp(3px, 0.8vw, 18px);
+    padding: clamp(1px, min(0.7vw, 1vh), 12px) clamp(2px, 0.7vw, 14px);
   }
   @media (max-width:480px){
     table{font-size:0.78rem;}
@@ -261,7 +269,9 @@
   <button class="secondary" id="addSchoolBtn">+ Baris Sekolah</button>
   <button class="secondary" id="addPosyanduBtn">+ Baris Posyandu</button>
   <button class="print" id="printBtn">🖨️ Cetak / Simpan PDF</button>
+  <button class="secondary" id="resetBtn" style="background:#c62828;">↺ Reset Data</button>
 </div>
+<p style="text-align:center; color:#888; font-size:0.78rem; margin:0 0 14px;">💾 Data tersimpan otomatis di perangkat ini</p>
 
 <div class="table-wrap">
 <table id="mainTable">
@@ -374,14 +384,71 @@ function attachDelHandler(btn){
     const row = btn.closest('tr');
     row.remove();
     recalcAll();
+    saveData();
   });
 }
 
-document.querySelectorAll('.del-btn').forEach(attachDelHandler);
+function serializeTable(){
+  const getRow = (tr)=>{
+    const tds = tr.querySelectorAll('td');
+    return [tds[0].textContent, tds[1].textContent, tds[2].textContent, tds[3].textContent, tds[4].textContent];
+  };
+  const school = [...document.querySelectorAll('#schoolBody tr')].map(getRow);
+  const posyandu = [...document.querySelectorAll('#posyanduBody tr')].map(getRow);
+  return {school, posyandu};
+}
+
+function buildRow(values){
+  const tr = document.createElement('tr');
+  const [name, a, b, c, d] = values;
+  tr.innerHTML = `<td contenteditable="true">${name||''}</td><td contenteditable="true" class="num">${a||''}</td><td contenteditable="true" class="num">${b||''}</td><td contenteditable="true" class="num">${c||''}</td><td contenteditable="true" class="num">${d||''}</td><td class="jumlah">0</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td>`;
+  attachDelHandler(tr.querySelector('.del-btn'));
+  return tr;
+}
+
+function restoreTable(data){
+  const schoolBody = document.getElementById('schoolBody');
+  const posyanduBody = document.getElementById('posyanduBody');
+  schoolBody.innerHTML = '';
+  posyanduBody.innerHTML = '';
+  (data.school||[]).forEach(row => schoolBody.appendChild(buildRow(row)));
+  (data.posyandu||[]).forEach(row => posyanduBody.appendChild(buildRow(row)));
+}
+
+const STORAGE_KEY = 'rekap-distribusi-data-v1';
+
+function saveData(){
+  try{
+    const data = serializeTable();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }catch(err){
+    console.error('Gagal menyimpan data ke penyimpanan lokal:', err);
+  }
+}
+
+function loadData(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      restoreTable(JSON.parse(raw));
+      return true;
+    }
+  }catch(err){
+    console.error('Gagal memuat data dari penyimpanan lokal:', err);
+  }
+  return false;
+}
+
+const dataWasLoaded = loadData();
+if(!dataWasLoaded){
+  document.querySelectorAll('.del-btn').forEach(attachDelHandler);
+  saveData();
+}
 
 document.getElementById('mainTable').addEventListener('input', (e)=>{
   if(e.target.matches('[contenteditable="true"]')){
     recalcAll();
+    saveData();
   }
 });
 
@@ -393,6 +460,7 @@ document.getElementById('addSchoolBtn').addEventListener('click', ()=>{
   attachDelHandler(tr.querySelector('.del-btn'));
   tr.querySelector('td').focus();
   recalcAll();
+  saveData();
 });
 
 document.getElementById('addPosyanduBtn').addEventListener('click', ()=>{
@@ -403,6 +471,14 @@ document.getElementById('addPosyanduBtn').addEventListener('click', ()=>{
   attachDelHandler(tr.querySelector('.del-btn'));
   tr.querySelector('td').focus();
   recalcAll();
+  saveData();
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  if(confirm('Hapus semua perubahan dan kembalikan ke data awal? Tindakan ini tidak bisa dibatalkan.')){
+    try{ localStorage.removeItem(STORAGE_KEY); }catch(err){}
+    location.reload();
+  }
 });
 
 document.getElementById('printBtn').addEventListener('click', ()=>{
