@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Distribusi Sekolah & Posyandu (Editable)</title>
+<style>
+  :root{
+    --green:#4CAF50;
+    --yellow:#FFEB3B;
+    --blue:#29B6F6;
+    --border:#333;
+    --text:#1a1a1a;
+    --bg:#f5f5f0;
+    --danger:#e53935;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: var(--bg);
+    margin:0;
+    padding: 24px 12px 80px;
+    color: var(--text);
+  }
+  h1{
+    text-align:center;
+    font-size: clamp(1.1rem, 4vw, 1.8rem);
+    margin-bottom: 4px;
+    color:#2e2e2e;
+  }
+  .subtitle{
+    text-align:center;
+    color:#666;
+    margin-bottom:8px;
+    font-size:0.9rem;
+  }
+  .hint{
+    text-align:center;
+    color:#4CAF50;
+    font-size:0.82rem;
+    margin-bottom:18px;
+    font-weight:600;
+  }
+  .toolbar{
+    max-width:900px;
+    margin: 0 auto 14px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    justify-content:center;
+  }
+  .toolbar button{
+    border:none;
+    border-radius:6px;
+    padding:8px 14px;
+    font-size:0.85rem;
+    font-weight:600;
+    cursor:pointer;
+    color:#fff;
+    background: var(--green);
+    transition: transform .1s, background .15s;
+  }
+  .toolbar button:hover{ filter:brightness(1.05); }
+  .toolbar button:active{ transform: scale(0.97); }
+  .toolbar button.secondary{ background:#607d8b; }
+  .toolbar button.print{ background:#29B6F6; }
+  .toolbar button.mode{ background:#8e24aa; }
+  .toolbar button.mode.is-view{
+    background:#43a047;
+  }
+  .table-wrap{
+    max-width: 900px;
+    margin: 0 auto 18px;
+    overflow-x:auto;
+    border-radius:6px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    background:#fff;
+  }
+  table{
+    width:100%;
+    border-collapse: collapse;
+    min-width: 680px;
+    font-size: 0.9rem;
+  }
+  th, td{
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    text-align:center;
+    white-space: nowrap;
+  }
+  td:first-child, th:first-child{
+    text-align:left;
+    white-space: normal;
+  }
+  thead th{
+    background: var(--green);
+    color:#fff;
+    font-weight:700;
+    text-transform:uppercase;
+    font-size:0.82rem;
+  }
+  tbody tr:nth-child(even){
+    background:#fafafa;
+  }
+  .total-row td{
+    background: var(--yellow);
+    font-weight:700;
+  }
+  .section-header th{
+    background: var(--green);
+  }
+  .grand-total td{
+    background: var(--blue);
+    color:#fff;
+    font-weight:800;
+    font-size:1.05rem;
+    padding:12px;
+  }
+  [contenteditable="true"]{
+    outline: none;
+    cursor: text;
+    border-radius:3px;
+  }
+  [contenteditable="true"]:hover{
+    background: #fff8e1;
+  }
+  [contenteditable="true"]:focus{
+    background: #fffde7;
+    box-shadow: inset 0 0 0 2px #FFC107;
+  }
+  .row-actions{
+    text-align:center;
+    white-space:nowrap;
+  }
+  .del-btn{
+    background: var(--danger);
+    color:#fff;
+    border:none;
+    border-radius:4px;
+    width:26px;
+    height:26px;
+    font-size:0.9rem;
+    cursor:pointer;
+    line-height:1;
+  }
+  .del-btn:hover{ filter:brightness(1.1); }
+  .add-row-btn{
+    background:#e0e0e0;
+    color:#333;
+    border:none;
+    border-radius:4px;
+    padding:4px 10px;
+    font-size:0.78rem;
+    cursor:pointer;
+  }
+  .footer-note{
+    text-align:center;
+    color:#888;
+    font-size:0.8rem;
+    margin-top:20px;
+  }
+  @media print{
+    .toolbar, .row-actions, th.actions-col{ display:none !important; }
+  }
+  body.view-mode .row-actions,
+  body.view-mode th.actions-col,
+  body.view-mode #addSchoolBtn,
+  body.view-mode #addPosyanduBtn{
+    display:none !important;
+  }
+  body.view-mode [contenteditable="true"]{
+    cursor:default;
+  }
+  body.view-mode [contenteditable="true"]:hover,
+  body.view-mode [contenteditable="true"]:focus{
+    background: transparent;
+    box-shadow:none;
+  }
+  body.view-mode .hint{
+    visibility:hidden;
+    height:0;
+    margin:0;
+  }
+  body.view-mode h1,
+  body.view-mode .subtitle,
+  body.view-mode .footer-note,
+  body.view-mode .toolbar button:not(#modeBtn){
+    display:none !important;
+  }
+  body.view-mode{
+    padding: 10px 6px 30px;
+  }
+  body.view-mode .toolbar{
+    margin-bottom: 8px;
+    justify-content: flex-end;
+    max-width: 900px;
+  }
+  body.view-mode .table-wrap{
+    max-width: 1000px;
+    margin: 0 auto;
+    overflow-x: hidden;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+  }
+  body.view-mode table{
+    min-width: 0;
+    width: 100%;
+    table-layout: fixed;
+    font-size: clamp(0.52rem, 2.1vw, 0.95rem);
+  }
+  body.view-mode th,
+  body.view-mode td{
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    padding: 4px 3px;
+    line-height: 1.2;
+  }
+  body.view-mode td:first-child,
+  body.view-mode th:first-child{
+    width: 26%;
+  }
+  body.view-mode th:not(:first-child),
+  body.view-mode td:not(:first-child):not(.row-actions){
+    width: 12.3%;
+  }
+  body.view-mode .grand-total td:first-child{
+    width: 74.2% !important;
+    text-align: left;
+  }
+  body.view-mode .grand-total td.t-grand{
+    width: 12.3% !important;
+  }
+  body.view-mode .grand-total td{
+    font-size: inherit;
+    padding: 4px 3px;
+  }
+  @media (max-width:480px){
+    table{font-size:0.78rem;}
+    th, td{padding:6px 6px;}
+  }
+</style>
+</head>
+<body>
+
+<h1>Data Distribusi Sekolah &amp; Posyandu</h1>
+<p class="subtitle">Rekap Porsi, Tenaga Pendidik, Uji Organoleptik, dan Data Posyandu</p>
+<p class="hint">✏️ Ketuk sel angka atau nama untuk mengedit langsung — total dihitung otomatis</p>
+
+<div class="toolbar">
+  <button class="mode" id="modeBtn">👁️ Mode Tampilan</button>
+  <button class="secondary" id="addSchoolBtn">+ Baris Sekolah</button>
+  <button class="secondary" id="addPosyanduBtn">+ Baris Posyandu</button>
+  <button class="print" id="printBtn">🖨️ Cetak / Simpan PDF</button>
+</div>
+
+<div class="table-wrap">
+<table id="mainTable">
+  <thead>
+    <tr>
+      <th>Nama Sekolah</th>
+      <th>Porsi Kecil</th>
+      <th>Porsi Besar</th>
+      <th>Tenaga Pendidik</th>
+      <th>Uji Organoleptik</th>
+      <th>Jumlah</th>
+      <th class="actions-col"></th>
+    </tr>
+  </thead>
+  <tbody id="schoolBody">
+    <tr><td contenteditable="true">RA UMMU HABIBAH</td><td contenteditable="true" class="num">37</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num">4</td><td contenteditable="true" class="num">2</td><td class="jumlah">43</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">TK ABA</td><td contenteditable="true" class="num">59</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num">9</td><td contenteditable="true" class="num">2</td><td class="jumlah">70</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">TK NEGERI TAMALATE</td><td contenteditable="true" class="num">147</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num">14</td><td contenteditable="true" class="num">2</td><td class="jumlah">163</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">TK SATRIADI</td><td contenteditable="true" class="num">19</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num">6</td><td contenteditable="true" class="num">2</td><td class="jumlah">27</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">TK REZKY SYAFAAT</td><td contenteditable="true" class="num">81</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num">10</td><td contenteditable="true" class="num">2</td><td class="jumlah">93</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">SD REZKY SYAFAAT</td><td contenteditable="true" class="num">50</td><td contenteditable="true" class="num">28</td><td contenteditable="true" class="num">12</td><td contenteditable="true" class="num">2</td><td class="jumlah">92</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">MTS RA PETTARANI</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num">45</td><td contenteditable="true" class="num">17</td><td contenteditable="true" class="num">2</td><td class="jumlah">64</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">SMP 18 MAKASSAR</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num">925</td><td contenteditable="true" class="num">76</td><td contenteditable="true" class="num">2</td><td class="jumlah">1003</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">SMP 26 MAKASSAR</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num">744</td><td contenteditable="true" class="num">66</td><td contenteditable="true" class="num">2</td><td class="jumlah">812</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+  </tbody>
+  <tbody>
+    <tr class="total-row" id="schoolTotalRow">
+      <td>TOTAL</td><td class="t-porsikecil">393</td><td class="t-porsibesar">1742</td><td class="t-tenaga">214</td><td class="t-uji">18</td><td class="t-jumlah">2367</td><td class="row-actions"></td>
+    </tr>
+  </tbody>
+
+  <thead>
+    <tr class="section-header">
+      <th>Nama Posyandu</th>
+      <th>Balita</th>
+      <th>Busui</th>
+      <th>Bumil</th>
+      <th>Kader</th>
+      <th>Jumlah</th>
+      <th class="actions-col"></th>
+    </tr>
+  </thead>
+  <tbody id="posyanduBody">
+    <tr><td contenteditable="true">ASOKA 2</td><td contenteditable="true" class="num">26</td><td contenteditable="true" class="num">25</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num">1</td><td class="jumlah">52</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">ASOKA 3</td><td contenteditable="true" class="num">83</td><td contenteditable="true" class="num">37</td><td contenteditable="true" class="num">10</td><td contenteditable="true" class="num">1</td><td class="jumlah">131</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">ASOKA 5</td><td contenteditable="true" class="num">38</td><td contenteditable="true" class="num">18</td><td contenteditable="true" class="num">3</td><td contenteditable="true" class="num">1</td><td class="jumlah">60</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+    <tr><td contenteditable="true">ASOKA 7</td><td contenteditable="true" class="num">35</td><td contenteditable="true" class="num">30</td><td contenteditable="true" class="num">2</td><td contenteditable="true" class="num">1</td><td class="jumlah">68</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td></tr>
+  </tbody>
+  <tbody>
+    <tr class="total-row" id="posyanduTotalRow">
+      <td>TOTAL</td><td class="t-balita">182</td><td class="t-busui">110</td><td class="t-bumil">15</td><td class="t-kader">4</td><td class="t-jumlah2">311</td><td class="row-actions"></td>
+    </tr>
+    <tr class="grand-total">
+      <td colspan="5">TOTAL KESELURUHAN</td><td class="t-grand">2678</td><td class="row-actions"></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p class="footer-note">Semua total dihitung ulang otomatis saat kamu mengubah angka. Gunakan tombol "+ Baris" untuk menambah data, dan ✕ untuk menghapus baris.</p>
+
+<script>
+function toNum(v){
+  const n = parseFloat((v||'').toString().replace(/[^0-9.\-]/g,''));
+  return isNaN(n) ? 0 : n;
+}
+
+function recalcSection(tbodyId, totalRowSelector, colClasses){
+  const tbody = document.getElementById(tbodyId);
+  const rows = tbody.querySelectorAll('tr');
+  const sums = colClasses.map(()=>0);
+
+  rows.forEach(row=>{
+    const cells = row.querySelectorAll('td.num');
+    let rowSum = 0;
+    cells.forEach((cell, i)=>{
+      const val = toNum(cell.textContent);
+      sums[i] += val;
+      rowSum += val;
+    });
+    const jumlahCell = row.querySelector('.jumlah');
+    if(jumlahCell) jumlahCell.textContent = rowSum;
+  });
+
+  colClasses.forEach((cls, i)=>{
+    const el = totalRowSelector.querySelector('.'+cls);
+    if(el) el.textContent = sums[i];
+  });
+
+  return sums;
+}
+
+function recalcAll(){
+  const schoolTotalRow = document.getElementById('schoolTotalRow');
+  const schoolSums = recalcSection('schoolBody', schoolTotalRow, ['t-porsikecil','t-porsibesar','t-tenaga','t-uji']);
+  const schoolJumlahTotal = schoolSums.reduce((a,b)=>a+b,0);
+  schoolTotalRow.querySelector('.t-jumlah').textContent = schoolJumlahTotal;
+
+  const posyanduTotalRow = document.getElementById('posyanduTotalRow');
+  const posyanduSums = recalcSection('posyanduBody', posyanduTotalRow, ['t-balita','t-busui','t-bumil','t-kader']);
+  const posyanduJumlahTotal = posyanduSums.reduce((a,b)=>a+b,0);
+  posyanduTotalRow.querySelector('.t-jumlah2').textContent = posyanduJumlahTotal;
+
+  const grand = schoolJumlahTotal + posyanduJumlahTotal;
+  document.querySelector('.t-grand').textContent = grand;
+}
+
+function attachDelHandler(btn){
+  btn.addEventListener('click', ()=>{
+    const row = btn.closest('tr');
+    row.remove();
+    recalcAll();
+  });
+}
+
+document.querySelectorAll('.del-btn').forEach(attachDelHandler);
+
+document.getElementById('mainTable').addEventListener('input', (e)=>{
+  if(e.target.matches('[contenteditable="true"]')){
+    recalcAll();
+  }
+});
+
+document.getElementById('addSchoolBtn').addEventListener('click', ()=>{
+  const tbody = document.getElementById('schoolBody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td contenteditable="true">Nama Sekolah Baru</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num"></td><td class="jumlah">0</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td>`;
+  tbody.appendChild(tr);
+  attachDelHandler(tr.querySelector('.del-btn'));
+  tr.querySelector('td').focus();
+  recalcAll();
+});
+
+document.getElementById('addPosyanduBtn').addEventListener('click', ()=>{
+  const tbody = document.getElementById('posyanduBody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td contenteditable="true">Nama Posyandu Baru</td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num"></td><td contenteditable="true" class="num"></td><td class="jumlah">0</td><td class="row-actions"><button class="del-btn" title="Hapus baris">✕</button></td>`;
+  tbody.appendChild(tr);
+  attachDelHandler(tr.querySelector('.del-btn'));
+  tr.querySelector('td').focus();
+  recalcAll();
+});
+
+document.getElementById('printBtn').addEventListener('click', ()=>{
+  window.print();
+});
+
+const modeBtn = document.getElementById('modeBtn');
+let isViewMode = false;
+
+function setEditable(state){
+  document.querySelectorAll('[contenteditable]').forEach(el=>{
+    el.setAttribute('contenteditable', state ? 'true' : 'false');
+  });
+}
+
+modeBtn.addEventListener('click', ()=>{
+  isViewMode = !isViewMode;
+  document.body.classList.toggle('view-mode', isViewMode);
+  setEditable(!isViewMode);
+  modeBtn.classList.toggle('is-view', isViewMode);
+  modeBtn.textContent = isViewMode ? '✏️ Mode Edit' : '👁️ Mode Tampilan';
+});
+
+recalcAll();
+</script>
+
+</body>
+</html>
