@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Data Distribusi Sekolah & Posyandu (Editable)</title>
+<title>Data Distribusi Sekolah & Posyandu (Editable + Realtime)</title>
 <style>
   :root{
     --green:#4CAF50;
@@ -188,7 +188,7 @@
   body.view-mode .toolbar button:not(#modeBtn){
     display:none !important;
   }
-  body.view-mode p[style*="tersimpan"]{
+  body.view-mode #autosaveNote{
     display:none !important;
   }
   body.view-mode{
@@ -256,6 +256,18 @@
     table{font-size:0.78rem;}
     th, td{padding:6px 6px;}
   }
+  #syncBadge{
+    display:inline-block;
+    margin-left:6px;
+    font-size:0.72rem;
+    padding:2px 8px;
+    border-radius:10px;
+    font-weight:700;
+    vertical-align:middle;
+  }
+  #syncBadge.online{ background:#c8e6c9; color:#2e7d32; }
+  #syncBadge.offline{ background:#ffcdd2; color:#c62828; }
+  #syncBadge.connecting{ background:#fff9c4; color:#8d6e00; }
 </style>
 </head>
 <body>
@@ -271,7 +283,7 @@
   <button class="print" id="printBtn">🖨️ Cetak / Simpan PDF</button>
   <button class="secondary" id="resetBtn" style="background:#c62828;">↺ Reset Data</button>
 </div>
-<p style="text-align:center; color:#888; font-size:0.78rem; margin:0 0 14px;">💾 Data tersimpan otomatis di perangkat ini</p>
+<p id="autosaveNote" style="text-align:center; color:#888; font-size:0.78rem; margin:0 0 14px;">☁️ Menyambungkan ke database... <span id="syncBadge" class="connecting">Menyambung</span></p>
 
 <div class="table-wrap">
 <table id="mainTable">
@@ -331,9 +343,30 @@
 </table>
 </div>
 
-<p class="footer-note">Semua total dihitung ulang otomatis saat kamu mengubah angka. Gunakan tombol "+ Baris" untuk menambah data, dan ✕ untuk menghapus baris.</p>
+<p class="footer-note">Semua total dihitung ulang otomatis saat kamu mengubah angka. Gunakan tombol "+ Baris" untuk menambah data, dan ✕ untuk menghapus baris. Perubahan tersinkron otomatis ke semua perangkat yang membuka halaman ini.</p>
+
+<!-- Firebase SDK (compat, agar bisa dipakai langsung tanpa bundler) -->
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-database-compat.js"></script>
 
 <script>
+/* ====================== KONFIGURASI FIREBASE ====================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyATTNNn1r1ORYTFWdljzd4dessh8t33SbI",
+  authDomain: "ppk-ormawa-42e49.firebaseapp.com",
+  databaseURL: "https://ppk-ormawa-42e49-default-rtdb.firebaseio.com",
+  projectId: "ppk-ormawa-42e49",
+  storageBucket: "ppk-ormawa-42e49.firebasestorage.app",
+  messagingSenderId: "629446223042",
+  appId: "1:629446223042:web:092fe22b2bdb868ba2c75b",
+  measurementId: "G-0GSWB5NZGM"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const dataRef = db.ref('rekap-distribusi-data-v1');
+
+/* ====================== UTIL ====================== */
 function toNum(v){
   const n = parseFloat((v||'').toString().replace(/[^0-9.\-]/g,''));
   return isNaN(n) ? 0 : n;
@@ -415,40 +448,127 @@ function restoreTable(data){
   (data.posyandu||[]).forEach(row => posyanduBody.appendChild(buildRow(row)));
 }
 
+/* ====================== PENYIMPANAN: FIREBASE + CACHE LOKAL ====================== */
 const STORAGE_KEY = 'rekap-distribusi-data-v1';
 
+// Data asli (bawaan halaman) dipakai untuk tombol "Reset Data"
+const DEFAULT_DATA = serializeTable();
+
+let lastKnownData = null;   // string JSON dari data yang terakhir diketahui (lokal atau server)
+let pendingRemoteData = null; // update dari server yang tertunda karena user sedang mengetik
+let saveTimer = null;
+
+function persistLocalCache(data){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }catch(err){}
+}
+
 function saveData(){
-  try{
-    const data = serializeTable();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  }catch(err){
-    console.error('Gagal menyimpan data ke penyimpanan lokal:', err);
+  const data = serializeTable();
+  lastKnownData = JSON.stringify(data);
+  persistLocalCache(data);
+  dataRef.set(data).catch(err=>{
+    console.error('Gagal menyimpan ke Firebase:', err);
+  });
+}
+
+// Ketikan diketik cepat -> tunda pengiriman ke server sedikit (debounce) supaya hemat & mulus
+function scheduleSave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveData, 500);
+}
+
+function applyRemoteData(data){
+  if(!data) return;
+  const incoming = JSON.stringify(data);
+  if(incoming === lastKnownData) return; // tidak ada perubahan nyata (misalnya echo dari simpanan sendiri)
+
+  const activeEl = document.activeElement;
+  if(activeEl && activeEl.matches && activeEl.matches('[contenteditable="true"]')){
+    // Jangan ganggu saat user sedang mengetik — terapkan setelah selesai
+    pendingRemoteData = data;
+    return;
+  }
+
+  lastKnownData = incoming;
+  restoreTable(data);
+  recalcAll();
+  persistLocalCache(data);
+}
+
+document.addEventListener('focusout', (e)=>{
+  if(e.target && e.target.matches && e.target.matches('[contenteditable="true"]') && pendingRemoteData){
+    const data = pendingRemoteData;
+    pendingRemoteData = null;
+    applyRemoteData(data);
+  }
+});
+
+/* ====================== STATUS KONEKSI ====================== */
+const autosaveNote = document.getElementById('autosaveNote');
+const syncBadge = document.getElementById('syncBadge');
+
+function setSyncStatus(status){
+  // status: 'connecting' | 'online' | 'offline'
+  syncBadge.className = status;
+  if(status === 'online'){
+    autosaveNote.firstChild.textContent = '☁️ Tersambung — data tersinkron otomatis ke semua perangkat ';
+    syncBadge.textContent = 'Online';
+  } else if(status === 'offline'){
+    autosaveNote.firstChild.textContent = '⚠️ Terputus — perubahan disimpan lokal & akan tersinkron saat online ';
+    syncBadge.textContent = 'Offline';
+  } else {
+    autosaveNote.firstChild.textContent = '☁️ Menyambungkan ke database... ';
+    syncBadge.textContent = 'Menyambung';
   }
 }
 
-function loadData(){
+db.ref('.info/connected').on('value', (snap)=>{
+  setSyncStatus(snap.val() === true ? 'online' : 'offline');
+});
+
+/* ====================== INISIALISASI ====================== */
+dataRef.once('value').then((snapshot)=>{
+  const remote = snapshot.val();
+  if(remote){
+    lastKnownData = JSON.stringify(remote);
+    restoreTable(remote);
+    persistLocalCache(remote);
+  }else{
+    // Belum ada data di Firebase -> gunakan cache lokal jika ada, atau data bawaan halaman
+    let seed = DEFAULT_DATA;
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw) seed = JSON.parse(raw);
+    }catch(err){}
+    lastKnownData = JSON.stringify(seed);
+    restoreTable(seed);
+    persistLocalCache(seed);
+    dataRef.set(seed);
+  }
+  recalcAll();
+
+  // Dengarkan perubahan realtime setelah pemuatan awal selesai
+  dataRef.on('value', (snap)=>{
+    applyRemoteData(snap.val());
+  });
+}).catch((err)=>{
+  console.error('Gagal terhubung ke Firebase, memakai data lokal sebagai cadangan:', err);
+  setSyncStatus('offline');
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
       restoreTable(JSON.parse(raw));
-      return true;
     }
-  }catch(err){
-    console.error('Gagal memuat data dari penyimpanan lokal:', err);
-  }
-  return false;
-}
-
-const dataWasLoaded = loadData();
-if(!dataWasLoaded){
+  }catch(e){}
   document.querySelectorAll('.del-btn').forEach(attachDelHandler);
-  saveData();
-}
+  recalcAll();
+});
 
+/* ====================== EVENT LISTENER UI ====================== */
 document.getElementById('mainTable').addEventListener('input', (e)=>{
   if(e.target.matches('[contenteditable="true"]')){
     recalcAll();
-    saveData();
+    scheduleSave();
   }
 });
 
@@ -475,9 +595,11 @@ document.getElementById('addPosyanduBtn').addEventListener('click', ()=>{
 });
 
 document.getElementById('resetBtn').addEventListener('click', ()=>{
-  if(confirm('Hapus semua perubahan dan kembalikan ke data awal? Tindakan ini tidak bisa dibatalkan.')){
+  if(confirm('Hapus semua perubahan dan kembalikan ke data awal? Ini akan diterapkan ke SEMUA perangkat yang tersambung. Tindakan ini tidak bisa dibatalkan.')){
     try{ localStorage.removeItem(STORAGE_KEY); }catch(err){}
-    location.reload();
+    dataRef.set(DEFAULT_DATA)
+      .then(()=>location.reload())
+      .catch(()=>location.reload());
   }
 });
 
@@ -505,8 +627,6 @@ modeBtn.addEventListener('click', ()=>{
   isViewMode = !isViewMode;
   applyMode();
 });
-
-recalcAll();
 
 // Tampilkan mode tampilan terlebih dahulu saat halaman pertama kali dibuka
 isViewMode = true;
