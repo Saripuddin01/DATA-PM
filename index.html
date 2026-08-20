@@ -418,15 +418,23 @@ function setEditable(state){
   });
 }
 
-modeBtn.addEventListener('click', ()=>{
-  isViewMode = !isViewMode;
+function applyMode(){
   document.body.classList.toggle('view-mode', isViewMode);
   setEditable(!isViewMode);
   modeBtn.classList.toggle('is-view', isViewMode);
   modeBtn.textContent = isViewMode ? '✏️ Mode Edit' : '👁️ Mode Tampilan';
+}
+
+modeBtn.addEventListener('click', ()=>{
+  isViewMode = !isViewMode;
+  applyMode();
 });
 
 recalcAll();
+
+// Tampilkan mode tampilan terlebih dahulu saat halaman pertama kali dibuka
+isViewMode = true;
+applyMode();
 </script>
 
 </body>
