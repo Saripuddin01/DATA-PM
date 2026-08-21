@@ -270,7 +270,7 @@
   #syncBadge.connecting{ background:#fff9c4; color:#8d6e00; }
 </style>
 </head>
-<body>
+<body class="view-mode">
 
 <h1>Data Distribusi Sekolah &amp; Posyandu</h1>
 <p class="subtitle">Rekap Porsi, Tenaga Pendidik, Uji Organoleptik, dan Data Posyandu</p>
@@ -350,6 +350,33 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-database-compat.js"></script>
 
 <script>
+/* ====================== MODE TAMPILAN / EDIT (dijalankan PALING AWAL) ======================
+   Bagian ini sengaja diletakkan di paling atas dan tidak bergantung pada Firebase sama sekali,
+   supaya "Mode Tampilan" (non-edit) SELALU langsung aktif begitu halaman dibuka —
+   walaupun Firebase gagal dimuat, lambat, atau errornya baru terjadi belakangan. */
+const modeBtn = document.getElementById('modeBtn');
+let isViewMode = true; // default: Mode Tampilan aktif, tidak bisa diedit
+
+function setEditable(state){
+  document.querySelectorAll('[contenteditable]').forEach(el=>{
+    el.setAttribute('contenteditable', state ? 'true' : 'false');
+  });
+}
+
+function applyMode(){
+  document.body.classList.toggle('view-mode', isViewMode);
+  setEditable(!isViewMode);
+  modeBtn.classList.toggle('is-view', isViewMode);
+  modeBtn.textContent = isViewMode ? '✏️ Mode Edit' : '👁️ Mode Tampilan';
+}
+
+modeBtn.addEventListener('click', ()=>{
+  isViewMode = !isViewMode;
+  applyMode();
+});
+
+applyMode(); // kunci semua sel jadi non-edit sekarang juga, sebelum kode lain (termasuk Firebase) jalan
+
 /* ====================== KONFIGURASI FIREBASE ====================== */
 const firebaseConfig = {
   apiKey: "AIzaSyATTNNn1r1ORYTFWdljzd4dessh8t33SbI",
@@ -362,9 +389,16 @@ const firebaseConfig = {
   measurementId: "G-0GSWB5NZGM"
 };
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-const dataRef = db.ref('rekap-distribusi-data-v1');
+let firebaseAvailable = true;
+let db, dataRef;
+try{
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+  dataRef = db.ref('rekap-distribusi-data-v1');
+}catch(err){
+  firebaseAvailable = false;
+  console.error('Firebase gagal diinisialisasi, memakai penyimpanan lokal saja:', err);
+}
 
 /* ====================== UTIL ====================== */
 function toNum(v){
@@ -446,6 +480,7 @@ function restoreTable(data){
   posyanduBody.innerHTML = '';
   (data.school||[]).forEach(row => schoolBody.appendChild(buildRow(row)));
   (data.posyandu||[]).forEach(row => posyanduBody.appendChild(buildRow(row)));
+  setEditable(!isViewMode); // pastikan baris baru ikut status mode saat ini (tampilan/edit)
 }
 
 /* ====================== PENYIMPANAN: FIREBASE + CACHE LOKAL ====================== */
@@ -466,9 +501,11 @@ function saveData(){
   const data = serializeTable();
   lastKnownData = JSON.stringify(data);
   persistLocalCache(data);
-  dataRef.set(data).catch(err=>{
-    console.error('Gagal menyimpan ke Firebase:', err);
-  });
+  if(firebaseAvailable){
+    dataRef.set(data).catch(err=>{
+      console.error('Gagal menyimpan ke Firebase:', err);
+    });
+  }
 }
 
 // Ketikan diketik cepat -> tunda pengiriman ke server sedikit (debounce) supaya hemat & mulus
@@ -522,47 +559,65 @@ function setSyncStatus(status){
   }
 }
 
-db.ref('.info/connected').on('value', (snap)=>{
-  setSyncStatus(snap.val() === true ? 'online' : 'offline');
-});
+if(firebaseAvailable){
+  db.ref('.info/connected').on('value', (snap)=>{
+    setSyncStatus(snap.val() === true ? 'online' : 'offline');
+  });
+}else{
+  setSyncStatus('offline');
+}
 
 /* ====================== INISIALISASI ====================== */
-dataRef.once('value').then((snapshot)=>{
-  const remote = snapshot.val();
-  if(remote){
-    lastKnownData = JSON.stringify(remote);
-    restoreTable(remote);
-    persistLocalCache(remote);
-  }else{
-    // Belum ada data di Firebase -> gunakan cache lokal jika ada, atau data bawaan halaman
-    let seed = DEFAULT_DATA;
-    try{
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if(raw) seed = JSON.parse(raw);
-    }catch(err){}
-    lastKnownData = JSON.stringify(seed);
-    restoreTable(seed);
-    persistLocalCache(seed);
-    dataRef.set(seed);
-  }
-  recalcAll();
-
-  // Dengarkan perubahan realtime setelah pemuatan awal selesai
-  dataRef.on('value', (snap)=>{
-    applyRemoteData(snap.val());
-  });
-}).catch((err)=>{
-  console.error('Gagal terhubung ke Firebase, memakai data lokal sebagai cadangan:', err);
-  setSyncStatus('offline');
+function loadLocalOnly(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
-      restoreTable(JSON.parse(raw));
+      const data = JSON.parse(raw);
+      lastKnownData = JSON.stringify(data);
+      restoreTable(data);
+    }else{
+      document.querySelectorAll('.del-btn').forEach(attachDelHandler);
     }
-  }catch(e){}
-  document.querySelectorAll('.del-btn').forEach(attachDelHandler);
+  }catch(e){
+    document.querySelectorAll('.del-btn').forEach(attachDelHandler);
+  }
   recalcAll();
-});
+}
+
+if(firebaseAvailable){
+  dataRef.once('value').then((snapshot)=>{
+    const remote = snapshot.val();
+    if(remote){
+      lastKnownData = JSON.stringify(remote);
+      restoreTable(remote);
+      persistLocalCache(remote);
+    }else{
+      // Belum ada data di Firebase -> gunakan cache lokal jika ada, atau data bawaan halaman
+      let seed = DEFAULT_DATA;
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if(raw) seed = JSON.parse(raw);
+      }catch(err){}
+      lastKnownData = JSON.stringify(seed);
+      restoreTable(seed);
+      persistLocalCache(seed);
+      dataRef.set(seed);
+    }
+    recalcAll();
+
+    // Dengarkan perubahan realtime setelah pemuatan awal selesai
+    dataRef.on('value', (snap)=>{
+      applyRemoteData(snap.val());
+    });
+  }).catch((err)=>{
+    console.error('Gagal terhubung ke Firebase, memakai data lokal sebagai cadangan:', err);
+    firebaseAvailable = false;
+    setSyncStatus('offline');
+    loadLocalOnly();
+  });
+}else{
+  loadLocalOnly();
+}
 
 /* ====================== EVENT LISTENER UI ====================== */
 document.getElementById('mainTable').addEventListener('input', (e)=>{
@@ -595,42 +650,24 @@ document.getElementById('addPosyanduBtn').addEventListener('click', ()=>{
 });
 
 document.getElementById('resetBtn').addEventListener('click', ()=>{
-  if(confirm('Hapus semua perubahan dan kembalikan ke data awal? Ini akan diterapkan ke SEMUA perangkat yang tersambung. Tindakan ini tidak bisa dibatalkan.')){
+  const pesan = firebaseAvailable
+    ? 'Hapus semua perubahan dan kembalikan ke data awal? Ini akan diterapkan ke SEMUA perangkat yang tersambung. Tindakan ini tidak bisa dibatalkan.'
+    : 'Hapus semua perubahan dan kembalikan ke data awal di perangkat ini? Tindakan ini tidak bisa dibatalkan.';
+  if(confirm(pesan)){
     try{ localStorage.removeItem(STORAGE_KEY); }catch(err){}
-    dataRef.set(DEFAULT_DATA)
-      .then(()=>location.reload())
-      .catch(()=>location.reload());
+    if(firebaseAvailable){
+      dataRef.set(DEFAULT_DATA)
+        .then(()=>location.reload())
+        .catch(()=>location.reload());
+    }else{
+      location.reload();
+    }
   }
 });
 
 document.getElementById('printBtn').addEventListener('click', ()=>{
   window.print();
 });
-
-const modeBtn = document.getElementById('modeBtn');
-let isViewMode = false;
-
-function setEditable(state){
-  document.querySelectorAll('[contenteditable]').forEach(el=>{
-    el.setAttribute('contenteditable', state ? 'true' : 'false');
-  });
-}
-
-function applyMode(){
-  document.body.classList.toggle('view-mode', isViewMode);
-  setEditable(!isViewMode);
-  modeBtn.classList.toggle('is-view', isViewMode);
-  modeBtn.textContent = isViewMode ? '✏️ Mode Edit' : '👁️ Mode Tampilan';
-}
-
-modeBtn.addEventListener('click', ()=>{
-  isViewMode = !isViewMode;
-  applyMode();
-});
-
-// Tampilkan mode tampilan terlebih dahulu saat halaman pertama kali dibuka
-isViewMode = true;
-applyMode();
 </script>
 
 </body>
